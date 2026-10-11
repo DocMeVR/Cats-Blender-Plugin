@@ -100,6 +100,8 @@ The [Neoneko Cats wiki](https://github.com/teamneoneko/Cats-Blender-Plugin/wiki)
 - Fixed hundreds of invalid escape sequence warnings in the bone name lists
 - Removed code paths for Blender 2.7x to 4.x
 - The extension manifest now passes `blender --command extension validate`
+- **Download Latest Translations** now downloads from this repository. Before, it fetched the 5.0 texts from Neoneko and could overwrite the dictionary with a GitHub error page
+- The Credits panel names this fork, and its **Support Us** button, which opened a page that no longer exists, is now **Report a Problem**
 
 ## Acknowledgements
 

@@ -61,7 +61,7 @@ class CreditsPanel(ToolPanel, bpy.types.Panel):
         
         support_row = actions_col.row(align=True)
         support_row.scale_y = 1.3
-        support_row.operator(Credits.SupportButton.bl_idname, icon='HEART')
+        support_row.operator(Credits.SupportButton.bl_idname, icon='URL')
         
         patch_row = actions_col.row(align=True)
         patch_row.scale_y = 1.0
