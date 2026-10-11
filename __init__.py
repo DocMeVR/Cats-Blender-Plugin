@@ -1,6 +1,6 @@
 # MIT License
 
-CATS_VERSION = "5.0.2.2"
+CATS_VERSION = "5.2.0.0"
 dev_branch = False
 
 import os
@@ -163,14 +163,14 @@ def remove_corrupted_files():
 
 
 def check_unsupported_blender_versions():
-    # Don't allow Blender versions older than 4.5
-    if bpy.app.version < (5, 0):
+    # Don't allow Blender versions older than 5.2
+    if bpy.app.version < (5, 2):
         unregister()
         sys.tracebacklimit = 0
         raise ImportError(t('Main.error.29unsupportedVersion'))
-     
-    # Don't allow 5.0+
-    if bpy.app.version >= (5, 1):
+
+    # Don't allow 5.3+
+    if bpy.app.version >= (5, 3):
         sys.tracebacklimit = 0
         raise ImportError(t('Main.error.40unsupportedVersion'))
 
@@ -263,12 +263,6 @@ def register():
     globs.dict_found = tools.translate.load_translations()
 
     # Set preferred Blender options
-    if hasattr(tools.common.get_user_preferences(), 'system') and hasattr(tools.common.get_user_preferences().system, 'use_international_fonts'):
-        tools.common.get_user_preferences().system.use_international_fonts = True
-    elif hasattr(tools.common.get_user_preferences(), 'view') and hasattr(tools.common.get_user_preferences().view, 'use_international_fonts'):
-        tools.common.get_user_preferences().view.use_international_fonts = True
-    else:
-        pass  # From 2.83 on this is no longer needed
     tools.common.get_user_preferences().filepaths.use_file_compression = True
     bpy.context.window_manager.addon_support = {'OFFICIAL', 'COMMUNITY'}
 
@@ -323,15 +317,14 @@ def unregister():
             pass
     print('Unregistered', count, 'CATS classes.')
 
+    # Remove Scene types
+    extentions.unregister()
+
     # Unregister all dynamic buttons and icons
     tools.iconloader.unload_icons()
 
     # Remove shapekey button from shapekey menu
-    try:
-        bpy.types.MESH_MT_shape_key_specials.remove(tools.shapekey.addToShapekeyMenu)
-    except AttributeError:
-        print('shapekey button was not registered')
-        pass
+    bpy.types.MESH_MT_shape_key_context_menu.remove(tools.shapekey.addToShapekeyMenu)
 
     # Remove folder from sys path
     if file_dir in sys.path:

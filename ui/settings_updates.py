@@ -40,7 +40,6 @@ class UpdaterPanel(ToolPanel, bpy.types.Panel):
         row.prop(context.scene, "export_translate_csv")
         
         row = settings_col.row(align=True)
-        path = context.scene.custom_translate_csv_export_dir if context.scene.custom_translate_csv_export_dir else default_cats_dir
         row.prop(context.scene, "custom_translate_csv_export_dir")
 
         settings_col.separator()

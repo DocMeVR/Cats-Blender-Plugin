@@ -3,6 +3,7 @@
 import os
 import bpy
 import copy
+import json
 import math
 import bmesh
 import mathutils
@@ -27,19 +28,18 @@ class EyeTrackingBackup:
         self.backup_path = os.path.join(bpy.app.tempdir, "eye_tracking_backup.json")
         self.bone_positions: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
         
-    def store_bone_positions(self, armature) -> bool:
+    def store_bone_positions(self, armature, bone_names=('LeftEye', 'RightEye')) -> bool:
         try:
+            # Only bones that exist can be stored, LeftEye and RightEye are missing before the first run
+            bones = armature.data.bones
             self.bone_positions = {
-                'LeftEye': {
-                    'head': tuple(armature.data.bones['LeftEye'].head_local),
-                    'tail': tuple(armature.data.bones['LeftEye'].tail_local)
-                },
-                'RightEye': {
-                    'head': tuple(armature.data.bones['RightEye'].head_local),
-                    'tail': tuple(armature.data.bones['RightEye'].tail_local)
+                name: {
+                    'head': tuple(bones[name].head_local),
+                    'tail': tuple(bones[name].tail_local)
                 }
+                for name in bone_names if isinstance(name, str) and name in bones
             }
-            
+
             with open(self.backup_path, 'w') as f:
                 json.dump(self.bone_positions, f)
             return True
@@ -352,7 +352,8 @@ class CreateEyesButton(bpy.types.Operator):
 
         # Create backup
         backup = EyeTrackingBackup()
-        if not backup.store_bone_positions(Common.get_armature()):
+        eye_bones = (context.scene.eye_left, context.scene.eye_right, 'LeftEye', 'RightEye')
+        if not backup.store_bone_positions(Common.get_armature(), eye_bones):
             self.report({'WARNING'}, "Failed to create backup")
 
         try:

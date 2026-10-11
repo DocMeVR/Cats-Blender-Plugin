@@ -4,11 +4,8 @@ import os
 import bpy
 import json
 import copy
-import time
 import pathlib
 import collections
-import threading
-from threading import Thread, Event
 from datetime import datetime, timezone
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -25,8 +22,6 @@ settings_file = os.path.join(resources_dir, "settings.json")
 
 settings_data = None
 settings_data_unchanged = None
-settings_stop_event = Event()
-settings_threads = []
 
 # Settings name = [Default Value, Require Blender Restart]
 settings_default = OrderedDict()
@@ -173,57 +168,40 @@ def reset_settings(full_reset=False, to_reset_settings=None):
     print('SETTINGS RESET')
 
 def start_apply_settings_timer():
-    global settings_threads
-    thread = Thread(target=apply_settings_with_timeout, args=[])
-    settings_threads.append(thread)
-    thread.start()
+    # Blender data may only be changed from the main thread, so use a Blender timer instead of a thread
+    if not bpy.app.timers.is_registered(apply_settings_timer):
+        bpy.app.timers.register(apply_settings_timer, first_interval=0.1)
 
-def apply_settings_with_timeout():
-    timeout = 5  # 5 seconds timeout
-    timer = threading.Timer(timeout, release_lock)
-    timer.start()
-    try:
-        with settings_lock_context():
-            apply_settings()
-    finally:
-        timer.cancel()
-
-def release_lock():
-    global lock_settings
-    print("Settings lock timed out, releasing lock")
-    lock_settings = False
+def apply_settings_timer():
+    with settings_lock_context():
+        applied = apply_settings()
+    # Returning None stops the timer, a number retries after that many seconds
+    return None if applied else 0.3
 
 def apply_settings():
-    applied = False
-    while not applied and not settings_stop_event.is_set():
-        if hasattr(bpy.context, 'scene'):
-            try:
-                settings_to_reset = []
-                for setting in settings_default.keys():
-                    try:
-                        setattr(bpy.context.scene, setting, settings_data.get(setting))
-                    except TypeError:
-                        settings_to_reset.append(setting)
-                if settings_to_reset:
-                    reset_settings(to_reset_settings=settings_to_reset)
-                    print("RESET SETTING ON TIMER:", setting)
-            except AttributeError:
-                time.sleep(0.3)
-                continue
+    scene = getattr(bpy.context, 'scene', None)
+    if scene is None:
+        return False
 
-            applied = True
-            print('Settings applied successfully')
-        else:
-            time.sleep(0.3)
+    try:
+        settings_to_reset = []
+        for setting in settings_default.keys():
+            try:
+                setattr(scene, setting, settings_data.get(setting))
+            except TypeError:
+                settings_to_reset.append(setting)
+        if settings_to_reset:
+            reset_settings(to_reset_settings=settings_to_reset)
+            print("RESET SETTINGS ON TIMER:", settings_to_reset)
+    except AttributeError:
+        return False
+
+    print('Settings applied successfully')
+    return True
 
 def stop_apply_settings_threads():
-    global settings_threads, settings_stop_event
-
-    print("Stopping settings threads...")
-    settings_stop_event.set()
-    for t in settings_threads:
-        t.join()
-    print("Settings threads stopped.")
+    if bpy.app.timers.is_registered(apply_settings_timer):
+        bpy.app.timers.unregister(apply_settings_timer)
 
 def settings_changed():
     for setting, value in settings_default.items():

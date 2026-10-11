@@ -11,7 +11,6 @@ from . import common as Common
 from . import material as Material
 from . import translate as Translate
 from . import armature_bones as Bones
-from .common import version_3_6_or_older
 from .register import register_wrap
 from .translations import t
 
@@ -278,39 +277,17 @@ class FixArmature(bpy.types.Operator):
         # Initialize lightweight bone cache for performance optimization
         bone_cache = BoneCache(armature)
         
-        # Store and remove bone collections to prevent crashes
-        bone_collections_backup = []
-        # Check if this is an MMD model
+        # Remove the bone collections of MMD models to prevent crashes
         mmd_root = None
         try:
             mmd_root = armature.parent.mmd_root
         except AttributeError:
             pass
-                
+
         if mmd_root:
-            # This is an MMD model, back up and remove bone collections
-            # First, collect all bone collection data in EDIT mode
+            # Bone collections can only be removed safely in OBJECT mode
             Common.set_active(armature)
-            Common.switch('EDIT')
-            
-            for collection in armature.data.collections:
-                # Store collection data
-                collection_data = {
-                    'name': collection.name,
-                    'is_visible': collection.is_visible,
-                    'bones': []
-                }
-                
-                # Store bones while in edit mode
-                for bone in collection.bones:
-                    collection_data['bones'].append(bone.name)
-                
-                bone_collections_backup.append(collection_data)
-            
-            # Switch to OBJECT mode before removing collections to avoid crashes
             Common.switch('OBJECT')
-            
-            # Now safely remove collections in OBJECT mode
             for collection in list(armature.data.collections):
                 armature.data.collections.remove(collection)
         
@@ -720,15 +697,9 @@ class FixArmature(bpy.types.Operator):
         # Switch to OBJECT mode before removing bone collections to avoid crashes
         Common.switch('OBJECT')
 
-        # Remove Bone Groups
-        # Replaced in 4.0 with Bone Collections (Armature.collections), which also subsumed Armature.layers. Bone colors
-        # are now defined per-bone, Bone.color.palette and PoseBone.color.palette
-        if Common.version_3_6_or_older():
-            for group in armature.pose.bone_groups:
-                armature.pose.bone_groups.remove(group)
-        else:
-            for collection in list(armature.data.collections):
-                armature.data.collections.remove(collection)
+        # Remove Bone Collections
+        for collection in list(armature.data.collections):
+            armature.data.collections.remove(collection)
 
         # Re-enter EDIT mode for subsequent operations
         Common.switch('EDIT')
@@ -743,27 +714,21 @@ class FixArmature(bpy.types.Operator):
         # Count steps for loading bar again and reset the layers
         steps += len(armature.data.edit_bones)
         
-        # Handle bone visibility based on Blender version
-        if Common.version_3_6_or_older():
-            # For Blender 3.6 or older, use bone layers
+        # Make all bones visible through the default bone collection
+        bone_collections = armature.data.collections
+        if bone_collections:
+            # The default collection on new Armatures is called "Bones" and usually has all bones assigned to it.
+            default_collection_name = "Bones"
+            bone_collection = bone_collections.get(default_collection_name)
+            if bone_collection is None:
+                # The default "Bones" collection does not exist, create it.
+                bone_collection = bone_collections.new(default_collection_name)
+            # Ensure the collection is visible.
+            bone_collection.is_visible = True
+
+            # Assign all bones to the default collection
             for bone in armature.data.edit_bones:
-                bone.layers[0] = True
-        else:
-            # For Blender 4.0+, use bone collections
-            bone_collections = armature.data.collections
-            if bone_collections:
-                # The default collection on new Armatures is called "Bones" and usually has all bones assigned to it.
-                default_collection_name = "Bones"
-                bone_collection = bone_collections.get(default_collection_name)
-                if bone_collection is None:
-                    # The default "Bones" collection does not exist, create it.
-                    bone_collection = bone_collections.new(default_collection_name)
-                # Ensure the collection is visible.
-                bone_collection.is_visible = True
-                
-                # Assign all bones to the default collection
-                for bone in armature.data.edit_bones:
-                    bone_collection.assign(bone)
+                bone_collection.assign(bone)
         
         for bone in armature.data.edit_bones:
             if bone.name in Bones.bone_list or bone.name.startswith(tuple(Bones.bone_list_with)):
@@ -886,7 +851,7 @@ class FixArmature(bpy.types.Operator):
         # Add conflicting bone names to new list
         conflicting_bones = []
         for names in Bones.bone_list_conflicting_names:
-            if '\Left' not in names[1] and '\L' not in names[1]:
+            if '\\Left' not in names[1] and '\\L' not in names[1]:
                 conflicting_bones.append(names)
                 continue
 
@@ -894,19 +859,19 @@ class FixArmature(bpy.types.Operator):
             name1 = ''
             name2 = ''
             for name0 in names[0]:
-                names0.append(name0.replace('\Left', 'Left').replace('\left', 'left').replace('\L', 'L').replace('\l', 'l'))
-            if '\Left' in names[1] or '\L' in names[1]:
-                name1 = names[1].replace('\Left', 'Left').replace('\left', 'left').replace('\L', 'L').replace('\l', 'l')
-            if '\Left' in names[2] or '\L' in names[2]:
-                name2 = names[2].replace('\Left', 'Left').replace('\left', 'left').replace('\L', 'L').replace('\l', 'l')
+                names0.append(name0.replace('\\Left', 'Left').replace('\\left', 'left').replace('\\L', 'L').replace('\\l', 'l'))
+            if '\\Left' in names[1] or '\\L' in names[1]:
+                name1 = names[1].replace('\\Left', 'Left').replace('\\left', 'left').replace('\\L', 'L').replace('\\l', 'l')
+            if '\\Left' in names[2] or '\\L' in names[2]:
+                name2 = names[2].replace('\\Left', 'Left').replace('\\left', 'left').replace('\\L', 'L').replace('\\l', 'l')
             conflicting_bones.append((names0, name1, name2))
 
             for name0 in names[0]:
-                names0.append(name0.replace('\Left', 'Right').replace('\left', 'right').replace('\L', 'R').replace('\l', 'r'))
-            if '\Left' in names[1] or '\L' in names[1]:
-                name1 = names[1].replace('\Left', 'Right').replace('\left', 'right').replace('\L', 'R').replace('\l', 'r')
-            if '\Left' in names[2] or '\L' in names[2]:
-                name2 = names[2].replace('\Left', 'Right').replace('\left', 'right').replace('\L', 'R').replace('\l', 'r')
+                names0.append(name0.replace('\\Left', 'Right').replace('\\left', 'right').replace('\\L', 'R').replace('\\l', 'r'))
+            if '\\Left' in names[1] or '\\L' in names[1]:
+                name1 = names[1].replace('\\Left', 'Right').replace('\\left', 'right').replace('\\L', 'R').replace('\\l', 'r')
+            if '\\Left' in names[2] or '\\L' in names[2]:
+                name2 = names[2].replace('\\Left', 'Right').replace('\\left', 'right').replace('\\L', 'R').replace('\\l', 'r')
             conflicting_bones.append((names0, name1, name2))
 
         # Resolve conflicting bone names

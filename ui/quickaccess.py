@@ -32,7 +32,7 @@ class QuickAccessPanel(ToolPanel, bpy.types.Panel):
         updater.check_for_update_background(check_on_startup=True)
         updater.draw_update_notification_panel(col)
 
-        # Version warnings section - only check for dict not found in Blender 5.0 (Blender does a better job at checking versions due to the blender manifest)
+        # Version warnings section - only check for dict not found (the blender manifest already limits the Blender version)
         if not globs.dict_found:
             col.separator()
             self.draw_version_warnings(col, context)
@@ -108,7 +108,7 @@ class QuickAccessPanel(ToolPanel, bpy.types.Panel):
         self.draw_pose_section(pose_col, context)
 
     def draw_version_warnings(self, col, context):
-        # Blender 5.0+ only - just check for dictionary
+        # The blender manifest limits the Blender version, so just check for the dictionary
         if not globs.dict_found:
             draw_error_box(col, [
                 t("QuickAccess.warn.noDict1"),

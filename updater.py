@@ -5,11 +5,11 @@ import ssl
 import bpy
 import time
 import json
-import urllib
+import urllib.error
+import urllib.request
 import shutil
 import pathlib
 import zipfile
-import addon_utils
 from threading import Thread
 from collections import OrderedDict
 from bpy.app.handlers import persistent
@@ -20,7 +20,16 @@ from . import CATS_VERSION, dev_branch
 no_ver_check = False
 fake_update = False
 
+# Releases are fetched from this repository. Only releases tagged for this Blender version are offered
+github_repo = 'DocMeVR/Cats-Blender-Plugin'
+dev_branch_name = 'main'
+releases_api_url = 'https://api.github.com/repos/' + github_repo + '/releases'
+dev_archive_url = 'https://github.com/' + github_repo + '/archive/refs/heads/' + dev_branch_name + '.zip'
+release_tag_prefix = '.'.join(CATS_VERSION.split('.')[:2]) + '.'
+
 is_checking_for_update = False
+update_check_thread = None
+update_check_error = ''
 checked_on_startup = False
 version_list = None
 current_version = []
@@ -43,14 +52,21 @@ resources_dir = os.path.join(main_dir, "resources")
 ignore_ver_file = os.path.join(resources_dir, "ignore_version.txt")
 no_auto_ver_check_file = os.path.join(resources_dir, "no_auto_ver_check.txt")
 
-# Get package name, important for panel in user preferences
-package_name = ''
-for mod in addon_utils.modules():
-    if mod.bl_info['name'] == 'Cats Blender Plugin':
-        package_name = mod.__name__
+# Package name of the extension (e.g. "bl_ext.user_default.cats_blender_plugin"), important for panel in user preferences
+package_name = __package__
 
 # Icons for UI
 ICON_URL = 'URL'
+
+
+def ssl_context():
+    # Verify certificates with the CA bundle shipped with Blender instead of disabling verification
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
 
 class CheckForUpdateButton(bpy.types.Operator):
     bl_idname = 'cats_updater.check_for_update'
@@ -372,36 +388,45 @@ def check_for_update_background(check_on_startup=False):
 
     is_checking_for_update = True
 
-    thread = Thread(target=check_for_update, args=[])
-    thread.start()
+    # Only the network request runs in the thread. Blender data and the UI may only be touched from the main thread,
+    # so a timer picks up the result once the thread is done
+    global update_check_thread
+    update_check_thread = Thread(target=check_for_update, args=[])
+    update_check_thread.start()
+    if not bpy.app.timers.is_registered(finish_update_check_when_done):
+        bpy.app.timers.register(finish_update_check_when_done, first_interval=0.5)
+
+
+def finish_update_check_when_done():
+    if update_check_thread and update_check_thread.is_alive():
+        return 0.5
+
+    # Update needed, show the notification popup if it wasn't checked through the UI
+    if update_needed and not used_updater_panel and not is_ignored_version:
+        prepare_to_show_update_notification()
+
+    # Finish update checking, update the UI
+    finish_update_checking(error=update_check_error)
+    return None
 
 
 def check_for_update():
+    global update_needed, is_ignored_version, update_check_error
     print('Checking for Cats update...')
+    update_check_error = ''
 
     # Get all releases from Github
-    if not get_github_releases('teamneoneko'):
-        finish_update_checking(error=t('check_for_update.cantCheck'))
+    if not get_github_releases():
+        update_check_error = t('check_for_update.cantCheck')
         return
 
     # Check if an update is needed
-    global update_needed, is_ignored_version
     update_needed = check_for_update_available()
     is_ignored_version = check_ignored_version()
-
-    # Update needed, show the notification popup if it wasn't checked through the UI
-    if update_needed:
-        print('Update found!')
-        if not used_updater_panel and not is_ignored_version:
-            prepare_to_show_update_notification()
-    else:
-        print('No update found.')
-
-    # Finish update checking, update the UI
-    finish_update_checking()
+    print('Update found!' if update_needed else 'No update found.')
 
 
-def get_github_releases(repo):
+def get_github_releases():
     global version_list
     version_list = OrderedDict()
 
@@ -420,45 +445,26 @@ def get_github_releases(repo):
         return True
 
     try:
-        ssl._create_default_https_context = ssl._create_unverified_context
-        with urllib.request.urlopen('https://git.disroot.org/api/v1/repos/Neoneko/Cats-Blender-Plugin/releases') as url:
+        request = urllib.request.Request(releases_api_url, headers={'Accept': 'application/vnd.github+json'})
+        with urllib.request.urlopen(request, context=ssl_context(), timeout=15) as url:
             data = json.loads(url.read().decode())
-    except urllib.error.URLError:
+    except (urllib.error.URLError, TimeoutError, ValueError):
         print('URL ERROR')
         return False
     if not data:
         return False
-    
-    # Determine tag prefix based on Blender version
-    tag_prefix = ""
-    if bpy.app.version >= (5, 0) and bpy.app.version < (5, 1):
-        tag_prefix = "5.0."
 
     for version in data:
-        full_tag = version.get('tag_name')
-        
-        # If we have a tag prefix, skip versions that don't match
-        if tag_prefix and not full_tag.startswith(tag_prefix):
-            continue   
-            
-        version_tag = full_tag
-        
-        # Remove prefix if present
-        if tag_prefix and version_tag.startswith(tag_prefix):
-            version_tag = version_tag[len(tag_prefix):]
-        
-        # Normalize version_tag 
-        version_tag = version_tag.replace('-', '.')
-        if version_tag.startswith('v.'):
-            version_tag = version_tag[2:]
-        if version_tag.startswith('v'):
-            version_tag = version_tag[1:]
-        
-        # Store full tag  
+        full_tag = version.get('tag_name') or ''
+
+        # Only list releases made for this Blender version, e.g. "5.2.0.1" or "v5.2.0.1"
+        if not full_tag.lstrip('v').startswith(release_tag_prefix):
+            continue
+
         version_list[full_tag] = [
             version['zipball_url'],
-            version['body'],
-            version['published_at'].split('T')[0]
+            version.get('body') or '',
+            (version.get('published_at') or '').split('T')[0]
         ]
 
     return True
@@ -510,10 +516,7 @@ def ui_refresh():
 
 
 def get_update_post():
-    if hasattr(bpy.app.handlers, 'scene_update_post'):
-        return bpy.app.handlers.scene_update_post
-    else:
-        return bpy.app.handlers.depsgraph_update_post
+    return bpy.app.handlers.depsgraph_update_post
 
 
 def prepare_to_show_update_notification():
@@ -544,9 +547,7 @@ def update_now(version=None, latest=False, dev=False):
         return
     if dev:
         print('UPDATE TO DEVELOPMENT')
-        # Dynamically construct dev branch URL based on major version
-        major_version = CATS_VERSION.split('.')[0]
-        update_link = f'https://git.disroot.org/Neoneko/Cats-Blender-Plugin/archive/blender-{major_version}x-dev.zip'
+        update_link = dev_archive_url
     elif latest or not version:
         print('UPDATE TO ' + latest_version_str)
         update_link = version_list.get(latest_version_str)[0]
@@ -573,9 +574,10 @@ def download_file(update_url):
     # Download zip
     print('DOWNLOAD FILE')
     try:
-        ssl._create_default_https_context = ssl._create_unverified_context
-        urllib.request.urlretrieve(update_url, update_zip_file)
-    except urllib.error.URLError:
+        with urllib.request.urlopen(update_url, context=ssl_context(), timeout=60) as response, \
+                open(update_zip_file, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+    except (urllib.error.URLError, TimeoutError):
         print("FILE COULD NOT BE DOWNLOADED")
         shutil.rmtree(downloads_dir)
         finish_update(error=t('download_file.cantConnect'))
@@ -989,6 +991,11 @@ def register(dev_branch, version_str):
 
 
 def unregister():
+    if bpy.app.timers.is_registered(finish_update_check_when_done):
+        bpy.app.timers.unregister(finish_update_check_when_done)
+    if show_update_notification in get_update_post():
+        get_update_post().remove(show_update_notification)
+
     # Unregister all Updater classes
     for cls in reversed(to_register):
         try:
@@ -999,4 +1006,5 @@ def unregister():
     if hasattr(bpy.types.Scene, 'cats_updater_version_list'):
         del bpy.types.Scene.cats_updater_version_list
 
-        del bpy.types.Scene.cats_updater_version_list
+    if hasattr(bpy.types.Scene, 'cats_update_action'):
+        del bpy.types.Scene.cats_update_action

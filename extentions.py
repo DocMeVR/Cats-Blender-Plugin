@@ -19,7 +19,24 @@ from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, St
 documents_folder = pathlib.Path.home() / "Documents"
 default_exports_dir = os.path.join(documents_folder, "Cats")
 
-def register(): 
+# Names of the Scene properties added by register(), so unregister() can remove them again
+_registered_scene_props = []
+
+
+def register():
+    existing = set(Scene.bl_rna.properties.keys())
+    register_scene_props()
+    _registered_scene_props[:] = [name for name in Scene.bl_rna.properties.keys() if name not in existing]
+
+
+def unregister():
+    for name in reversed(_registered_scene_props):
+        if hasattr(Scene, name):
+            delattr(Scene, name)
+    _registered_scene_props.clear()
+
+
+def register_scene_props():
     Scene.remove_rigidbodies_joints_global = BoolProperty(
         name=t('Scene.removerigidbodiesjointsglobal.label'),
         description=t('Scene.removerigidbodiesjointsglobal.desc'),
