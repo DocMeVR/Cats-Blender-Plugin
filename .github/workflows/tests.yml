@@ -35,7 +35,9 @@ jobs:
       run: '"$BLENDER" --factory-startup --command extension validate .'
 
     - name: Build the extension
-      run: '"$BLENDER" --factory-startup --command extension build --output-dir "$RUNNER_TEMP/dist"'
+      run: |
+        mkdir -p "$RUNNER_TEMP/dist"
+        "$BLENDER" --factory-startup --command extension build --output-dir "$RUNNER_TEMP/dist"
 
     - name: Run the smoke test on the built extension
       run: |
