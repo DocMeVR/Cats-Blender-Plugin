@@ -1,0 +1,49 @@
+# Builds the extension with Blender 5.2 and runs the smoke test against the built zip
+
+name: Blender 5.2 tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      BLENDER_VERSION: "5.2.2"
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install libraries Blender needs
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1
+
+    - name: Download Blender ${{ env.BLENDER_VERSION }}
+      run: |
+        curl -fsSL -o blender.tar.xz "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+        mkdir -p "$RUNNER_TEMP/blender"
+        tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
+        rm blender.tar.xz
+        echo "BLENDER=$RUNNER_TEMP/blender/blender" >> "$GITHUB_ENV"
+
+    - name: Validate the manifest
+      run: '"$BLENDER" --factory-startup --command extension validate .'
+
+    - name: Build the extension
+      run: '"$BLENDER" --factory-startup --command extension build --output-dir "$RUNNER_TEMP/dist"'
+
+    - name: Run the smoke test on the built extension
+      run: |
+        mkdir -p "$RUNNER_TEMP/profile"
+        BLENDER_USER_RESOURCES="$RUNNER_TEMP/profile" "$BLENDER" --background --factory-startup -noaudio \
+          --python-exit-code 1 --python tests/smoke_test.py -- --zip "$(ls "$RUNNER_TEMP"/dist/*.zip)"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: cats_blender_plugin
+        path: ${{ runner.temp }}/dist/*.zip
