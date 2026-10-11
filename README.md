@@ -87,10 +87,10 @@ The [Neoneko Cats wiki](https://github.com/teamneoneko/Cats-Blender-Plugin/wiki)
 - [Troubleshooting](https://github.com/teamneoneko/Cats-Blender-Plugin/wiki/Troubleshooting)
 - [FAQ](https://github.com/teamneoneko/Cats-Blender-Plugin/wiki/FAQ)
 
-## Changes from the Neoneko 5.0 version
+## Changes from the Neoneko 5.0.3.1 version
 
 - Runs on Blender 5.2 and its Python 3.13
-- Includes the root bone fixes from the Neoneko `blender-5x-dev` branch
+- Includes Neoneko's last release, 5.0.3.1, from [git.disroot.org](https://git.disroot.org/Neoneko/Cats-Blender-Plugin) with its updated MMD Tools, and the root bone fixes from their `blender-5x-dev` branch
 - Fixed a crash caused by applying settings from a background thread; settings now apply through a Blender timer
 - The updater checks this repository's releases over verified HTTPS and no longer disables certificate checks for all of Blender
 - Fixed errors when disabling the extension; its scene properties and shape key menu entry are now removed

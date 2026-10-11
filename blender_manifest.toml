@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 # Unofficial Cats Blender Plugin Extension
 id = "cats_blender_plugin"
-version = "5.2.1"
+version = "5.2.2"
 name = "Unofficial Cats Blender Plugin"
 tagline = "Shortens the steps to import and optimize models for VRChat"
 maintainer = "DocMeVR"
